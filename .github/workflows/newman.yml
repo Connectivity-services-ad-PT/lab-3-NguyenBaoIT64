@@ -30,28 +30,36 @@ jobs:
           nohup npm run mock:iot > prism-iot.log 2>&1 &
           nohup npm run mock:vision > prism-vision.log 2>&1 &
           nohup npm run mock:access-gate > prism-gate.log 2>&1 &
-          sleep 2
+          sleep 5
 
-      - name: Wait for all mock servers to be ready
+      - name: Wait for Access Gate mock server to be ready (B3 required)
+        run: npx wait-on http://localhost:4020/health --timeout 30000
+
+      - name: Wait for IoT and Vision mocks (optional, continue if fail)
         run: |
-          npx wait-on http://localhost:4010/health --timeout 30000
-          npx wait-on http://localhost:4011/health --timeout 30000
-          npx wait-on http://localhost:4020/health --timeout 30000
+          npx wait-on http://localhost:4010/health --timeout 15000 || echo "IoT mock timeout (optional)"
+          npx wait-on http://localhost:4011/health --timeout 15000 || echo "Vision mock timeout (optional)"
+        continue-on-error: true
 
-      - name: Run Newman tests - IoT Ingestion (mock)
+      - name: Run Newman tests - IoT Ingestion (mock, optional)
         run: npm run test:mock
         continue-on-error: true
 
-      - name: Run Newman tests - B3 Access Gate (mock)
+      - name: Run Newman tests - B3 Access Gate (mock, required)
         run: npm run test:b3:mock
-        continue-on-error: true
+
+      - name: Upload HTML test reports
+        if: always()
+        run: |
+          npm run test:b3:html || true
 
       - name: Show Prism logs on failure
         if: failure()
         run: |
-          echo "=== IoT Ingestion Mock Log ===" && cat prism-iot.log || true
-          echo "=== AI Vision Mock Log ===" && cat prism-vision.log || true
-          echo "=== Access Gate Mock Log ===" && cat prism-gate.log || true
+          echo "=== IoT Ingestion Mock Log ===" && cat prism-iot.log 2>/dev/null || echo "Log not found"
+          echo "=== AI Vision Mock Log ===" && cat prism-vision.log 2>/dev/null || echo "Log not found"
+          echo "=== Access Gate Mock Log ===" && cat prism-gate.log 2>/dev/null || echo "Log not found"
+          echo "=== Current processes ===" && ps aux | grep prism || true
 
       - name: Upload Newman reports
         if: always()
