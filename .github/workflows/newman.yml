@@ -25,21 +25,12 @@ jobs:
       - name: Lint OpenAPI contracts
         run: npm run lint:contracts
 
-      - name: Start Prism mock servers (IoT, AI Vision, Access Gate)
-        run: |
-          nohup npm run mock:iot > prism-iot.log 2>&1 &
-          nohup npm run mock:vision > prism-vision.log 2>&1 &
-          nohup npm run mock:access-gate > prism-gate.log 2>&1 &
-          sleep 5
+      - name: Start all Prism mock servers (with health checks)
+        run: node scripts/start-all-mocks.js > /tmp/mocks.log 2>&1 &
+        timeout-minutes: 2
 
-      - name: Wait for Access Gate mock server to be ready (B3 required)
-        run: npx wait-on http://localhost:4020/health --timeout 30000
-
-      - name: Wait for IoT and Vision mocks (optional, continue if fail)
-        run: |
-          npx wait-on http://localhost:4010/health --timeout 15000 || echo "IoT mock timeout (optional)"
-          npx wait-on http://localhost:4011/health --timeout 15000 || echo "Vision mock timeout (optional)"
-        continue-on-error: true
+      - name: Wait for mock servers to be ready
+        run: sleep 10
 
       - name: Run Newman tests - IoT Ingestion (mock, optional)
         run: npm run test:mock
@@ -53,13 +44,12 @@ jobs:
         run: |
           npm run test:b3:html || true
 
-      - name: Show Prism logs on failure
+      - name: Show mock server logs if tests failed
         if: failure()
         run: |
-          echo "=== IoT Ingestion Mock Log ===" && cat prism-iot.log 2>/dev/null || echo "Log not found"
-          echo "=== AI Vision Mock Log ===" && cat prism-vision.log 2>/dev/null || echo "Log not found"
-          echo "=== Access Gate Mock Log ===" && cat prism-gate.log 2>/dev/null || echo "Log not found"
-          echo "=== Current processes ===" && ps aux | grep prism || true
+          echo "=== Mock server logs ===" && cat /tmp/mocks.log 2>/dev/null || echo "Mock logs not found"
+          echo "=== Running processes ===" && ps aux | grep -E 'prism|mock' || true
+          echo "=== Network check ===" && netstat -tlnp 2>/dev/null | grep -E '4010|4011|4020' || echo "No listening ports found"
 
       - name: Upload Newman reports
         if: always()
