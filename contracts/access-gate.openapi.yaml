@@ -1,0 +1,506 @@
+openapi: 3.1.0
+info:
+  title: Smart Campus — Access Gate API
+  version: 0.3.0
+  description: |
+    Contract cho Access Gate Service (B3) - Kiểm soát ra/vào bằng thẻ RFID/QR/Mã sinh viên.
+    Service này mô phỏng hệ thống kiểm soát ra/vào với xác thực thẻ, ghi log sự kiện,
+    và kết nối với Core Business để kiểm tra chính sách truy cập.
+servers:
+  - url: http://localhost:4020
+    description: Prism mock server for Access Gate
+  - url: http://localhost:8001
+    description: Local development server
+tags:
+  - name: access
+    description: Access event management
+  - name: cards
+    description: Card/credential management
+  - name: system
+    description: Health and runtime information
+security:
+  - bearerAuth: []
+paths:
+  /health:
+    get:
+      tags: [system]
+      operationId: getHealth
+      summary: Kiểm tra trạng thái service
+      description: Public health check dùng để kiểm tra mock/service đã sẵn sàng.
+      security: []
+      responses:
+        "200":
+          description: Service đang hoạt động
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+              examples:
+                ok:
+                  value:
+                    status: ok
+                    service: access-gate
+                    version: 0.3.0
+
+  /access-events:
+    post:
+      tags: [access]
+      operationId: createAccessEvent
+      summary: Ghi nhận sự kiện quẹt thẻ ra/vào
+      description: |
+        Endpoint nhận sự kiện quẹt thẻ RFID, QR, hoặc nhập mã từ cơ chế kiểm soát cổng ra/vào.
+        Request phải có card_id, gate_id, direction và timestamp.
+        Service kiểm tra tính hợp lệ của thẻ, ghi log, và gửi sự kiện đến Core Business.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AccessEventCreate"
+            examples:
+              valid_entry:
+                value:
+                  card_id: "RFID-2026-001"
+                  gate_id: "gate-main"
+                  direction: "IN"
+                  timestamp: "2026-05-13T07:30:00+07:00"
+              valid_exit:
+                value:
+                  card_id: "RFID-2026-001"
+                  gate_id: "gate-main"
+                  direction: "OUT"
+                  timestamp: "2026-05-13T17:30:00+07:00"
+      responses:
+        "201":
+          description: Đã ghi nhận sự kiện truy cập
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccessEventResponse"
+              examples:
+                success:
+                  value:
+                    event_id: "EVT-20260513-0001"
+                    card_id: "RFID-2026-001"
+                    gate_id: "gate-main"
+                    direction: "IN"
+                    access_granted: true
+                    person_id: "SV001"
+                    reason: "Valid student card during allowed time"
+                    timestamp: "2026-05-13T07:30:01+07:00"
+        "400":
+          description: Request không hợp lệ
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+              examples:
+                missing_card:
+                  value:
+                    type: https://smart-campus.local/problems/validation-error
+                    title: Validation error
+                    status: 400
+                    detail: card_id is required
+                invalid_direction:
+                  value:
+                    type: https://smart-campus.local/problems/validation-error
+                    title: Validation error
+                    status: 400
+                    detail: direction must be IN or OUT
+        "401":
+          description: Không có quyền (unauthorized)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "403":
+          description: Thẻ bị từ chối (access denied)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+              examples:
+                card_not_found:
+                  value:
+                    type: https://smart-campus.local/problems/access-denied
+                    title: Access denied
+                    status: 403
+                    detail: Card not registered in system
+                outside_hours:
+                  value:
+                    type: https://smart-campus.local/problems/access-denied
+                    title: Access denied
+                    status: 403
+                    detail: Access attempt outside allowed hours
+        "429":
+          description: Quá nhiều request
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+
+  /access-events/{event_id}:
+    get:
+      tags: [access]
+      operationId: getAccessEvent
+      summary: Lấy chi tiết sự kiện truy cập
+      parameters:
+        - name: event_id
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^EVT-\d{8}-\d{4}$'
+          example: "EVT-20260513-0001"
+      responses:
+        "200":
+          description: Chi tiết sự kiện
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccessEventResponse"
+        "404":
+          description: Sự kiện không tìm thấy
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+
+  /access-history:
+    get:
+      tags: [access]
+      operationId: getAccessHistory
+      summary: Lấy lịch sử truy cập
+      parameters:
+        - name: card_id
+          in: query
+          description: Lọc theo card_id
+          schema:
+            type: string
+        - name: gate_id
+          in: query
+          description: Lọc theo gate_id
+          schema:
+            type: string
+        - name: direction
+          in: query
+          description: Lọc theo hướng (IN, OUT)
+          schema:
+            type: string
+            enum: [IN, OUT]
+        - name: limit
+          in: query
+          description: Số lượng record tối đa (mặc định 50, tối đa 500)
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 50
+        - name: offset
+          in: query
+          description: Số bản ghi bỏ qua (pagination)
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        "200":
+          description: Danh sách lịch sử truy cập
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccessHistoryResponse"
+        "400":
+          description: Request không hợp lệ
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+
+  /cards:
+    post:
+      tags: [cards]
+      operationId: registerCard
+      summary: Đăng ký thẻ mới
+      description: Endpoint để đăng ký thẻ RFID, QR hoặc mã sinh viên vào hệ thống.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CardRegistration"
+            examples:
+              valid:
+                value:
+                  card_id: "RFID-2026-002"
+                  person_id: "SV002"
+                  card_type: "student"
+                  status: "active"
+      responses:
+        "201":
+          description: Đã đăng ký thẻ thành công
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CardResponse"
+        "400":
+          description: Request không hợp lệ
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "409":
+          description: Thẻ đã tồn tại
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+
+  /cards/{card_id}:
+    get:
+      tags: [cards]
+      operationId: getCard
+      summary: Lấy thông tin thẻ
+      parameters:
+        - name: card_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Thông tin thẻ
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CardResponse"
+        "404":
+          description: Thẻ không tìm thấy
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+
+    put:
+      tags: [cards]
+      operationId: updateCard
+      summary: Cập nhật trạng thái thẻ
+      parameters:
+        - name: card_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CardUpdate"
+      responses:
+        "200":
+          description: Đã cập nhật thẻ thành công
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CardResponse"
+        "404":
+          description: Thẻ không tìm thấy
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Token dạng JWT từ Core Business hoặc auth service
+
+  schemas:
+    HealthResponse:
+      type: object
+      required: [status, service]
+      properties:
+        status:
+          type: string
+          enum: [ok, degraded]
+        service:
+          type: string
+        version:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+
+    AccessEventCreate:
+      type: object
+      required: [card_id, gate_id, direction, timestamp]
+      properties:
+        card_id:
+          type: string
+          description: ID của thẻ RFID/QR/mã
+          example: "RFID-2026-001"
+        gate_id:
+          type: string
+          description: ID của cổng kiểm soát
+          example: "gate-main"
+        direction:
+          type: string
+          enum: [IN, OUT]
+          description: Hướng truy cập
+        timestamp:
+          type: string
+          format: date-time
+          description: Thời điểm quẹt thẻ
+          example: "2026-05-13T07:30:00+07:00"
+        device_id:
+          type: string
+          description: ID của thiết bị kiểm soát (tuỳ chọn)
+          example: "READER-001"
+
+    AccessEventResponse:
+      type: object
+      required: [event_id, card_id, gate_id, direction, access_granted, timestamp]
+      properties:
+        event_id:
+          type: string
+          pattern: '^EVT-\d{8}-\d{4}$'
+          description: ID duy nhất của sự kiện
+          example: "EVT-20260513-0001"
+        card_id:
+          type: string
+          example: "RFID-2026-001"
+        gate_id:
+          type: string
+          example: "gate-main"
+        direction:
+          type: string
+          enum: [IN, OUT]
+        access_granted:
+          type: boolean
+          description: Có được phép vào/ra không
+        person_id:
+          type: string
+          nullable: true
+          description: ID của người truy cập (null nếu thẻ không hợp lệ)
+          example: "SV001"
+        reason:
+          type: string
+          description: Lý do cấp quyền hoặc từ chối
+          example: "Valid student card during allowed time"
+        timestamp:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+
+    AccessHistoryResponse:
+      type: object
+      required: [total, limit, offset, events]
+      properties:
+        total:
+          type: integer
+          description: Tổng số sự kiện phù hợp
+        limit:
+          type: integer
+        offset:
+          type: integer
+        events:
+          type: array
+          items:
+            $ref: "#/components/schemas/AccessEventResponse"
+
+    CardRegistration:
+      type: object
+      required: [card_id, person_id, card_type]
+      properties:
+        card_id:
+          type: string
+          description: ID duy nhất của thẻ
+        person_id:
+          type: string
+          description: ID của người sở hữu thẻ
+        card_type:
+          type: string
+          enum: [student, staff, visitor, contractor]
+        status:
+          type: string
+          enum: [active, inactive, suspended]
+          default: active
+        valid_from:
+          type: string
+          format: date
+          description: Ngày thẻ bắt đầu có hiệu lực
+        valid_until:
+          type: string
+          format: date
+          description: Ngày thẻ hết hạn
+
+    CardResponse:
+      type: object
+      required: [card_id, person_id, card_type, status, created_at]
+      properties:
+        card_id:
+          type: string
+        person_id:
+          type: string
+        card_type:
+          type: string
+          enum: [student, staff, visitor, contractor]
+        status:
+          type: string
+          enum: [active, inactive, suspended]
+        valid_from:
+          type: string
+          format: date
+        valid_until:
+          type: string
+          format: date
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    CardUpdate:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [active, inactive, suspended]
+        valid_until:
+          type: string
+          format: date
+
+    ProblemDetails:
+      type: object
+      required: [type, title, status]
+      properties:
+        type:
+          type: string
+          description: URI xác định loại vấn đề
+          example: "https://smart-campus.local/problems/validation-error"
+        title:
+          type: string
+          description: Mô tả ngắn gọn
+          example: "Validation error"
+        status:
+          type: integer
+          minimum: 400
+          maximum: 599
+          description: HTTP status code
+        detail:
+          type: string
+          description: Chi tiết cụ thể về lỗi
+          example: "card_id is required"
+        instance:
+          type: string
+          description: URI của tài nguyên cụ thể (nếu có)
+        trace_id:
+          type: string
+          description: ID để truy vết

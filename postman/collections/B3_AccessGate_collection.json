@@ -1,0 +1,1119 @@
+{
+  "info": {
+    "_postman_id": "b3-access-gate",
+    "name": "B3 - Access Gate Contract Tests",
+    "description": "Postman Collection cho Service B3: Access Gate - Kiểm soát ra/vào. Cấu trúc theo bài giảng: Functional, Auth, Negative, Boundary/Reliability, Consumer-side Smoke.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "const prefix = pm.environment.get('tracePrefix') || 'fit4110-b3';",
+          "pm.variables.set('traceId', prefix + '-' + Date.now());",
+          "pm.request.headers.upsert({ key: 'X-Trace-Id', value: pm.variables.get('traceId') });"
+        ]
+      }
+    }
+  ],
+  "variable": [],
+  "item": [
+    {
+      "name": "00_Health",
+      "item": [
+        {
+          "name": "GET /health - service is alive",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/health",
+              "host": ["{{baseUrl}}"],
+              "path": ["health"]
+            },
+            "description": "Public endpoint kiểm tra service đã sẵn sàng"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('Response has service status', function () {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json).to.have.property('status', 'ok');",
+                  "  pm.expect(json).to.have.property('service', 'access-gate');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "01_Functional",
+      "item": [
+        {
+          "name": "POST /access-events - entry happy path (valid student card)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/access-events",
+              "host": ["{{baseUrl}}"],
+              "path": ["access-events"]
+            },
+            "description": "Ghi nhận sự kiện quẹt thẻ sinh viên hợp lệ vào cổng - Happy path",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"card_id\": \"RFID-2026-001\",\n  \"gate_id\": \"gate-main\",\n  \"direction\": \"IN\",\n  \"timestamp\": \"2026-05-13T07:30:00+07:00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 201', function () {",
+                  "  pm.response.to.have.status(201);",
+                  "});",
+                  "pm.test('Response has required fields', function () {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json).to.have.property('event_id');",
+                  "  pm.expect(json).to.have.property('card_id', 'RFID-2026-001');",
+                  "  pm.expect(json).to.have.property('access_granted');",
+                  "  pm.expect(json).to.have.property('person_id');",
+                  "});",
+                  "pm.test('Access granted for valid student card', function () {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json.access_granted).to.equal(true);",
+                  "  pm.expect(json.reason).to.include('Valid');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /access-events - exit happy path (valid student card)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/access-events",
+              "host": ["{{baseUrl}}"],
+              "path": ["access-events"]
+            },
+            "description": "Ghi nhận sự kiện quẹt thẻ sinh viên hợp lệ ra khỏi cổng",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"card_id\": \"RFID-2026-001\",\n  \"gate_id\": \"gate-main\",\n  \"direction\": \"OUT\",\n  \"timestamp\": \"2026-05-13T17:30:00+07:00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 201', function () {",
+                  "  pm.response.to.have.status(201);",
+                  "});",
+                  "pm.test('Direction is OUT', function () {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json.direction).to.equal('OUT');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /access-events/{event_id} - retrieve event detail",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/access-events/EVT-20260513-0001",
+              "host": ["{{baseUrl}}"],
+              "path": ["access-events", "EVT-20260513-0001"]
+            },
+            "description": "Lấy chi tiết một sự kiện truy cập"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('Response has all required fields', function () {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json).to.have.property('event_id');",
+                  "  pm.expect(json).to.have.property('card_id');",
+                  "  pm.expect(json).to.have.property('gate_id');",
+                  "  pm.expect(json).to.have.property('access_granted');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /access-history - list access events with filters",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/access-history?card_id=RFID-2026-001&limit=10&offset=0",
+              "host": ["{{baseUrl}}"],
+              "path": ["access-history"],
+              "query": [
+                {
+                  "key": "card_id",
+                  "value": "RFID-2026-001"
+                },
+                {
+                  "key": "limit",
+                  "value": "10"
+                },
+                {
+                  "key": "offset",
+                  "value": "0"
+                }
+              ]
+            },
+            "description": "Lấy lịch sử truy cập với phân trang"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('Response is list with pagination info', function () {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json).to.have.property('total');",
+                  "  pm.expect(json).to.have.property('limit');",
+                  "  pm.expect(json).to.have.property('offset');",
+                  "  pm.expect(json).to.have.property('events');",
+                  "  pm.expect(json.events).to.be.an('array');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /cards - register new card",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/cards",
+              "host": ["{{baseUrl}}"],
+              "path": ["cards"]
+            },
+            "description": "Đăng ký thẻ RFID/QR mới vào hệ thống",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"card_id\": \"RFID-2026-002\",\n  \"person_id\": \"SV002\",\n  \"card_type\": \"student\",\n  \"status\": \"active\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 201', function () {",
+                  "  pm.response.to.have.status(201);",
+                  "});",
+                  "pm.test('Card registered successfully', function () {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json).to.have.property('card_id', 'RFID-2026-002');",
+                  "  pm.expect(json).to.have.property('status', 'active');",
+                  "  pm.expect(json).to.have.property('created_at');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /cards/{card_id} - retrieve card details",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/cards/RFID-2026-001",
+              "host": ["{{baseUrl}}"],
+              "path": ["cards", "RFID-2026-001"]
+            },
+            "description": "Lấy thông tin chi tiết của thẻ"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('Card details returned', function () {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json).to.have.property('card_id');",
+                  "  pm.expect(json).to.have.property('person_id');",
+                  "  pm.expect(json).to.have.property('card_type');",
+                  "  pm.expect(json).to.have.property('status');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "02_Auth",
+      "item": [
+        {
+          "name": "POST /access-events - missing token (should fail)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/access-events",
+              "host": ["{{baseUrl}}"],
+              "path": ["access-events"]
+            },
+            "description": "Request không có Authorization header - kiểm tra 401/403",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"card_id\": \"RFID-2026-001\",\n  \"gate_id\": \"gate-main\",\n  \"direction\": \"IN\",\n  \"timestamp\": \"2026-05-13T07:30:00+07:00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Unauthorized request returns 401 or 403', function () {",
+                  "  pm.expect([401, 403]).to.include(pm.response.code);",
+                  "});",
+                  "pm.test('Error response is ProblemDetails format', function () {",
+                  "  if ([401, 403].includes(pm.response.code)) {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json).to.have.property('type');",
+                  "    pm.expect(json).to.have.property('title');",
+                  "    pm.expect(json).to.have.property('status');",
+                  "  }",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /access-events - invalid token (should fail)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer invalid-token-xyz"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/access-events",
+              "host": ["{{baseUrl}}"],
+              "path": ["access-events"]
+            },
+            "description": "Request với token sai - kiểm tra từ chối",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"card_id\": \"RFID-2026-001\",\n  \"gate_id\": \"gate-main\",\n  \"direction\": \"IN\",\n  \"timestamp\": \"2026-05-13T07:30:00+07:00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Invalid token returns 401 or 403', function () {",
+                  "  pm.expect([401, 403]).to.include(pm.response.code);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /health - public endpoint (no auth required)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/health",
+              "host": ["{{baseUrl}}"],
+              "path": ["health"]
+            },
+            "description": "Health endpoint không yêu cầu auth"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Public endpoint returns 200 without token', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "03_Negative",
+      "item": [
+        {
+          "name": "POST /access-events - missing card_id (400)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/access-events",
+              "host": ["{{baseUrl}}"],
+              "path": ["access-events"]
+            },
+            "description": "Request thiếu field bắt buộc card_id",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"gate_id\": \"gate-main\",\n  \"direction\": \"IN\",\n  \"timestamp\": \"2026-05-13T07:30:00+07:00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Missing field returns 400', function () {",
+                  "  pm.response.to.have.status(400);",
+                  "});",
+                  "pm.test('Error follows ProblemDetails format', function () {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json).to.have.property('status', 400);",
+                  "  pm.expect(json).to.have.property('detail');",
+                  "  pm.expect(json.detail).to.include('card_id');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /access-events - invalid direction enum (400)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/access-events",
+              "host": ["{{baseUrl}}"],
+              "path": ["access-events"]
+            },
+            "description": "Direction phải là IN hoặc OUT",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"card_id\": \"RFID-2026-001\",\n  \"gate_id\": \"gate-main\",\n  \"direction\": \"INVALID\",\n  \"timestamp\": \"2026-05-13T07:30:00+07:00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Invalid enum value returns 400', function () {",
+                  "  pm.response.to.have.status(400);",
+                  "});",
+                  "pm.test('Error mentions direction or enum constraint', function () {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json.detail.toLowerCase()).to.include('direction');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /access-events - missing gate_id (400)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/access-events",
+              "host": ["{{baseUrl}}"],
+              "path": ["access-events"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"card_id\": \"RFID-2026-001\",\n  \"direction\": \"IN\",\n  \"timestamp\": \"2026-05-13T07:30:00+07:00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Missing gate_id returns 400', function () {",
+                  "  pm.response.to.have.status(400);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /access-events/{event_id} - invalid event_id format (404 or 400)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/access-events/INVALID",
+              "host": ["{{baseUrl}}"],
+              "path": ["access-events", "INVALID"]
+            },
+            "description": "Event ID không đúng format"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Invalid format returns 400 or 404', function () {",
+                  "  pm.expect([400, 404]).to.include(pm.response.code);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /access-events - card_id not in system (403)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/access-events",
+              "host": ["{{baseUrl}}"],
+              "path": ["access-events"]
+            },
+            "description": "Thẻ không được đăng ký - access denied",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"card_id\": \"RFID-UNKNOWN-999\",\n  \"gate_id\": \"gate-main\",\n  \"direction\": \"IN\",\n  \"timestamp\": \"2026-05-13T07:30:00+07:00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Unknown card returns 403 (access denied)', function () {",
+                  "  pm.response.to.have.status(403);",
+                  "});",
+                  "pm.test('Response indicates card not found', function () {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json.detail.toLowerCase()).to.include('card');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "04_Boundary_Reliability",
+      "item": [
+        {
+          "name": "POST /access-events - access outside allowed hours (403 or accepted with warning)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/access-events",
+              "host": ["{{baseUrl}}"],
+              "path": ["access-events"]
+            },
+            "description": "Quẹt thẻ ngoài giờ hành chính - test boundary điều kiện thời gian",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"card_id\": \"RFID-2026-001\",\n  \"gate_id\": \"gate-main\",\n  \"direction\": \"IN\",\n  \"timestamp\": \"2026-05-13T23:00:00+07:00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Access outside hours returns 201 or 403', function () {",
+                  "  pm.expect([201, 403]).to.include(pm.response.code);",
+                  "});",
+                  "if (pm.response.code === 201) {",
+                  "  pm.test('If accepted, reason should mention time restriction', function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json.reason.toLowerCase()).to.include('outside' || 'time' || 'hour');",
+                  "  });",
+                  "}",
+                  "if (pm.response.code === 403) {",
+                  "  pm.test('If denied, reason should mention hours', function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json.detail.toLowerCase()).to.include('hour' || 'time');",
+                  "  });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /access-history - pagination boundary (limit 1, offset 0)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/access-history?limit=1&offset=0",
+              "host": ["{{baseUrl}}"],
+              "path": ["access-history"],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "1"
+                },
+                {
+                  "key": "offset",
+                  "value": "0"
+                }
+              ]
+            },
+            "description": "Test pagination với limit nhỏ"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('Limit is respected', function () {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json.events.length).to.be.at.most(1);",
+                  "  pm.expect(json.limit).to.equal(1);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /access-history - pagination boundary (limit 500, max allowed)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/access-history?limit=500&offset=0",
+              "host": ["{{baseUrl}}"],
+              "path": ["access-history"],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "500"
+                },
+                {
+                  "key": "offset",
+                  "value": "0"
+                }
+              ]
+            },
+            "description": "Test pagination với giá trị limit tối đa cho phép"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('Max limit is accepted', function () {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json.limit).to.equal(500);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /access-history - invalid limit boundary (>500, should error or be capped)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/access-history?limit=1000&offset=0",
+              "host": ["{{baseUrl}}"],
+              "path": ["access-history"],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "1000"
+                },
+                {
+                  "key": "offset",
+                  "value": "0"
+                }
+              ]
+            },
+            "description": "Limit vượt quá giá trị tối đa (schema xác định tối đa 500)"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Over-limit is handled (400 or capped to 500)', function () {",
+                  "  pm.expect([200, 400]).to.include(pm.response.code);",
+                  "});",
+                  "if (pm.response.code === 200) {",
+                  "  pm.test('Limit should be capped to 500', function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json.limit).to.be.at.most(500);",
+                  "  });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Response time check - access event should respond quickly",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/access-events",
+              "host": ["{{baseUrl}}"],
+              "path": ["access-events"]
+            },
+            "description": "Kiểm tra response time - endpoint này phải nhanh vì là real-time access control",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"card_id\": \"RFID-2026-001\",\n  \"gate_id\": \"gate-main\",\n  \"direction\": \"IN\",\n  \"timestamp\": \"2026-05-13T07:30:00+07:00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Response time is acceptable (< 2000ms)', function () {",
+                  "  pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});",
+                  "pm.test('Local service should be faster than 500ms', function () {",
+                  "  if (pm.environment.get('env') === 'local') {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(500);",
+                  "  }",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "05_Consumer_side_Smoke",
+      "item": [
+        {
+          "name": "Mock Core Business: POST /evaluate-access - consumer test",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{coreMockUrl}}/evaluate-access",
+              "host": ["{{coreMockUrl}}"],
+              "path": ["evaluate-access"]
+            },
+            "description": "Consumer-side smoke test: kiểm tra Access Gate có thể gọi mock của Core Business để gửi access event",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"event_id\": \"EVT-20260513-0001\",\n  \"card_id\": \"RFID-2026-001\",\n  \"gate_id\": \"gate-main\",\n  \"direction\": \"IN\",\n  \"timestamp\": \"2026-05-13T07:30:00+07:00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Core Business mock is reachable', function () {",
+                  "  pm.expect([200, 201, 400]).to.include(pm.response.code);",
+                  "});",
+                  "pm.test('Response follows expected contract', function () {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json).to.have.property('event_id').or.property('error');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Mock Analytics: POST /event - consumer test",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{analyticsMockUrl}}/event",
+              "host": ["{{analyticsMockUrl}}"],
+              "path": ["event"]
+            },
+            "description": "Consumer-side smoke test: kiểm tra Access Gate có thể gửi access event đến mock Analytics",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"event_type\": \"access\",\n  \"card_id\": \"RFID-2026-001\",\n  \"direction\": \"IN\",\n  \"timestamp\": \"2026-05-13T07:30:00+07:00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Analytics mock is reachable', function () {",
+                  "  pm.expect([200, 201, 400, 500]).to.include(pm.response.code);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "06_Local_only_NonFunctional",
+      "item": [
+        {
+          "name": "Local SLA: response time < 300ms for access event",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/access-events",
+              "host": ["{{baseUrl}}"],
+              "path": ["access-events"]
+            },
+            "description": "SLA test - chỉ chạy trên local service thật, không phải mock",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"card_id\": \"RFID-2026-001\",\n  \"gate_id\": \"gate-main\",\n  \"direction\": \"IN\",\n  \"timestamp\": \"2026-05-13T07:30:00+07:00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.environment.get('env') === 'local') {",
+                  "  pm.test('SLA: local service response < 300ms', function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(300);",
+                  "  });",
+                  "} else {",
+                  "  pm.test('Skipped: SLA test only runs on local environment', function () {",
+                  "    pm.skip();",
+                  "  });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
