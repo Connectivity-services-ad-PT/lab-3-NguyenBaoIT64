@@ -56,7 +56,8 @@ async function startServers() {
     const child = spawn('npm', ['run', server.script], {
       cwd: process.cwd(),
       stdio: ['ignore', 'pipe', 'pipe'],
-      detached: false
+      detached: false,
+      shell: true
     });
 
     // Log output
